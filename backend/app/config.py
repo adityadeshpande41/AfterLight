@@ -22,5 +22,9 @@ class Settings(BaseSettings):
     s3_bucket: str = "afterlight-evidence"
     s3_region: str = "us-east-1"
 
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
 
 settings = Settings()
