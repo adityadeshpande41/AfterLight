@@ -61,6 +61,12 @@ async def playbook_agent(state: dict) -> dict:
     if not incident:
         return {**state, "playbook_citations": []}
 
+    # Tracing
+    from app.workflows.tracing import WorkflowTrace
+    import time
+    trace: WorkflowTrace = state.get("_trace")
+    trace_step = trace.start_agent("playbook_agent") if trace else None
+
     client = OpenAI(api_key=settings.openai_api_key)
 
     # Build context for the agent
@@ -113,6 +119,7 @@ When done, provide your final JSON array of citations."""},
             function_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
 
+            tool_start = time.time()
             if function_name in RAG_TOOL_FUNCTIONS:
                 try:
                     tool_result_str = RAG_TOOL_FUNCTIONS[function_name](**arguments)
@@ -127,6 +134,11 @@ When done, provide your final JSON array of citations."""},
                     result_str = json.dumps({"error": str(e)})
             else:
                 result_str = json.dumps({"error": f"Unknown tool: {function_name}"})
+            tool_duration = int((time.time() - tool_start) * 1000)
+
+            # Record in trace
+            if trace and trace_step:
+                trace.add_tool_call(trace_step, function_name, arguments, result_str, tool_duration)
 
             messages.append({
                 "role": "tool",
@@ -134,6 +146,11 @@ When done, provide your final JSON array of citations."""},
                 "content": result_str,
             })
             tool_calls_made += 1
+
+    # Finish trace
+    if trace and trace_step:
+        trace.finish_agent(trace_step, output_summary=f"{len(all_citations)} playbook citations retrieved")
+        trace.total_llm_calls += tool_calls_made + 1
 
     # Deduplicate and return all gathered citations
     # Sort by relevance score

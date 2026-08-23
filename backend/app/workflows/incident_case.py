@@ -37,7 +37,7 @@ Graph structure:
                                   (with feedback)
 """
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -74,6 +74,8 @@ class IncidentCaseState(TypedDict):
     validation_feedback: str | None
     # Errors
     errors: list[str]
+    # Trace (internal, not serialized to response directly)
+    _trace: Any
 
 
 async def load_incident_data(state: IncidentCaseState) -> IncidentCaseState:
@@ -239,6 +241,14 @@ incident_case_graph = build_incident_case_graph().compile()
 
 async def run_incident_case(incident_id: str) -> dict:
     """Execute the full incident case workflow."""
+    from app.workflows.tracing import WorkflowTrace
+    import uuid as uuid_mod
+
+    trace = WorkflowTrace(
+        workflow_id=str(uuid_mod.uuid4())[:8],
+        incident_id=incident_id,
+    )
+
     initial_state: IncidentCaseState = {
         "incident_id": incident_id,
         "incident": None,
@@ -255,12 +265,17 @@ async def run_incident_case(incident_id: str) -> dict:
         "retry_count": 0,
         "validation_feedback": None,
         "errors": [],
+        "_trace": trace,
     }
 
     result = await incident_case_graph.ainvoke(initial_state)
 
     # Persist results
     await _persist_workflow_results(result)
+
+    # Attach trace to result (remove internal _trace key)
+    result.pop("_trace", None)
+    result["trace"] = trace.to_dict()
 
     return result
 

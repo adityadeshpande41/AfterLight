@@ -29,6 +29,7 @@ class WorkflowRunResponse(BaseModel):
     is_valid: bool
     needs_human_review: bool
     errors: list[str]
+    trace: dict | None = None
 
 
 @router.post("/incidents/{incident_id}/analyze", response_model=WorkflowRunResponse)
@@ -70,4 +71,5 @@ async def trigger_incident_workflow(
         is_valid=workflow_result.get("is_valid", False),
         needs_human_review=workflow_result.get("needs_human_review", True),
         errors=workflow_result.get("errors", []),
+        trace=workflow_result.get("trace"),
     )

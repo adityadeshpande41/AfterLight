@@ -45,6 +45,12 @@ async def evidence_agent(state: dict) -> dict:
     if not incident:
         return {**state, "errors": state.get("errors", []) + ["No incident data"]}
 
+    # Tracing
+    import time
+    from app.workflows.tracing import WorkflowTrace
+    trace: WorkflowTrace = state.get("_trace")
+    trace_step = trace.start_agent("evidence_agent") if trace else None
+
     incident_type = incident.get("type", "Injury")
     requirements = REQUIRED_EVIDENCE.get(incident_type, REQUIRED_EVIDENCE["Injury"])
 
@@ -106,6 +112,11 @@ async def evidence_agent(state: dict) -> dict:
         "missing_items": missing_items,
         "has_urgent_gaps": any(f["urgency"] == "urgent" for f in findings if f["status"] == "gap"),
     }
+
+    # Finish trace
+    if trace and trace_step:
+        gaps = len([f for f in findings if f["status"] == "gap"])
+        trace.finish_agent(trace_step, output_summary=f"{completeness_pct:.0f}% complete, {gaps} gaps found")
 
     return {
         **state,

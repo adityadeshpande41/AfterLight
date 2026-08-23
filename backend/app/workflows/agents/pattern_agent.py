@@ -56,6 +56,12 @@ async def pattern_agent(state: dict) -> dict:
     if not incident or not venue:
         return {**state, "pattern_analysis": None}
 
+    # Tracing
+    from app.workflows.tracing import WorkflowTrace
+    import time
+    trace: WorkflowTrace = state.get("_trace")
+    trace_step = trace.start_agent("pattern_agent") if trace else None
+
     client = OpenAI(api_key=settings.openai_api_key)
 
     # Initial message with context
@@ -100,6 +106,7 @@ When you have enough information, provide your final JSON analysis (no tool call
             arguments = json.loads(tool_call.function.arguments)
 
             # Execute the tool
+            tool_start = time.time()
             if function_name in SQL_TOOL_FUNCTIONS:
                 try:
                     tool_result = SQL_TOOL_FUNCTIONS[function_name](**arguments)
@@ -108,6 +115,11 @@ When you have enough information, provide your final JSON analysis (no tool call
                     result_str = json.dumps({"error": str(e)})
             else:
                 result_str = json.dumps({"error": f"Unknown tool: {function_name}"})
+            tool_duration = int((time.time() - tool_start) * 1000)
+
+            # Record in trace
+            if trace and trace_step:
+                trace.add_tool_call(trace_step, function_name, arguments, result_str, tool_duration)
 
             messages.append({
                 "role": "tool",
@@ -147,5 +159,11 @@ When you have enough information, provide your final JSON analysis (no tool call
             "supporting_incident_ids": [],
             "summary": f"Agent analysis: {final_content[:200]}",
         }
+
+    # Finish trace
+    if trace and trace_step:
+        summary = pattern_analysis.get("summary", "")[:200]
+        trace.finish_agent(trace_step, output_summary=summary)
+        trace.total_llm_calls += tool_calls_made + 1  # tool calls + final synthesis
 
     return {**state, "pattern_analysis": pattern_analysis}
