@@ -108,6 +108,26 @@ export interface WorkflowResult {
   trace: WorkflowTrace | null;
 }
 
+export interface ChatCitation {
+  source: string;
+  section: string | null;
+  content_preview: string | null;
+}
+
+export interface ChatSuggestedAction {
+  title: string;
+  link: string | null;
+}
+
+export interface ChatResponseDTO {
+  answer: string;
+  citations: ChatCitation[];
+  suggested_actions: ChatSuggestedAction[];
+  is_cached: boolean;
+  guardrail_triggered: boolean;
+  guardrail_reason: string | null;
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -217,4 +237,8 @@ export const api = {
   // Decisions (human-in-the-loop)
   createDecision: (body: { incident_id: string; decision: string; reviewer: string; note?: string; action_plan?: WorkflowAction[] }) =>
     mutateJSON<{ id: string; decision: string }>('/decisions', 'POST', body),
+
+  // Chat (Risk Copilot)
+  chat: (message: string, venueId: string = 'moonlight') =>
+    mutateJSON<ChatResponseDTO>('/chat', 'POST', { message, venue_id: venueId }),
 };

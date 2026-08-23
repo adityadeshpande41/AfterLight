@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.actions import router as actions_router
+from app.api.chat import router as chat_router
 from app.api.decisions import router as decisions_router
 from app.api.evidence import router as evidence_router
 from app.api.health import router as health_router
@@ -20,3 +21,4 @@ router.include_router(evidence_router)
 router.include_router(uploads_router)
 router.include_router(workflows_router)
 router.include_router(decisions_router)
+router.include_router(chat_router)
