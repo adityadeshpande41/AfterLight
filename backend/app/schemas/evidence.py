@@ -1,4 +1,4 @@
-"""Pydantic response schemas for evidence items."""
+"""Pydantic request/response schemas for evidence items."""
 
 import uuid
 
@@ -20,3 +20,9 @@ class EvidenceItemResponse(BaseModel):
 
 class EvidenceListResponse(BaseModel):
     evidence: list[EvidenceItemResponse]
+
+
+class UpdateEvidenceRequest(BaseModel):
+    """Request body for updating an evidence item."""
+    status: str | None = None
+    detail: str | None = None

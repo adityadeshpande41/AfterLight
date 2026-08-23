@@ -13,6 +13,46 @@ async function fetchJSON<T>(path: string): Promise<T> {
   return res.json();
 }
 
+async function mutateJSON<T>(path: string, method: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+// --- Request body types ---
+
+export interface CreateIncidentBody {
+  title: string;
+  incident_type: string;
+  severity?: string;
+  location: string;
+  occurred_at?: string;
+  people?: string[];
+  summary: string;
+}
+
+export interface UpdateActionBody {
+  status?: string;
+  proof_description?: string;
+}
+
+export interface UpdateEvidenceBody {
+  status?: string;
+  detail?: string;
+}
+
+export interface UploadURLResponse {
+  upload_url: string;
+  object_key: string;
+  expires_in: number;
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -92,4 +132,26 @@ export const api = {
     fetchJSON<{ actions: ActionItemDTO[] }>(`/venues/${venueId}/actions`),
   getVenueEvidence: (venueId: string) =>
     fetchJSON<{ evidence: EvidenceItemDTO[] }>(`/venues/${venueId}/evidence`),
+
+  // Write operations
+  createIncident: (venueId: string, body: CreateIncidentBody) =>
+    mutateJSON<IncidentDTO>(`/venues/${venueId}/incidents`, 'POST', body),
+  updateAction: (actionId: string, body: UpdateActionBody) =>
+    mutateJSON<ActionItemDTO>(`/actions/${actionId}`, 'PATCH', body),
+  updateEvidence: (evidenceId: string, body: UpdateEvidenceBody) =>
+    mutateJSON<EvidenceItemDTO>(`/evidence/${evidenceId}`, 'PATCH', body),
+
+  // Upload flow
+  requestUploadURL: (evidenceId: string, filename: string, contentType: string) =>
+    mutateJSON<UploadURLResponse>('/uploads/request-url', 'POST', {
+      evidence_id: evidenceId,
+      filename,
+      content_type: contentType,
+    }),
+  confirmUpload: (evidenceId: string, objectKey: string, fileHash?: string) =>
+    mutateJSON<EvidenceItemDTO>('/uploads/confirm', 'POST', {
+      evidence_id: evidenceId,
+      object_key: objectKey,
+      file_hash: fileHash,
+    }),
 };

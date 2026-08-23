@@ -1,4 +1,4 @@
-"""Pydantic response schemas for action items."""
+"""Pydantic request/response schemas for action items."""
 
 import uuid
 from datetime import datetime
@@ -22,3 +22,9 @@ class ActionItemResponse(BaseModel):
 
 class ActionListResponse(BaseModel):
     actions: list[ActionItemResponse]
+
+
+class UpdateActionRequest(BaseModel):
+    """Request body for updating an action item."""
+    status: str | None = None
+    proof_description: str | None = None

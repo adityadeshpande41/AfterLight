@@ -6,7 +6,7 @@
  * (so the frontend still works standalone for demo purposes).
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { venues as seedVenues, incidents as seedIncidents, actions as seedActions, evidence as seedEvidence, scoreHistory as seedScoreHistory } from '@/data/fixtures';
 import type { ActionItem, EvidenceItem, Incident, ScorePoint, Venue } from '@/types';
@@ -118,10 +118,43 @@ export function useDemoData() {
   const evidence = evidenceQuery.data ? mapEvidence(evidenceQuery.data) : seedEvidence;
   const scoreHistory = scoreQuery.data ? mapScoreHistory(scoreQuery.data) : seedScoreHistory;
 
-  // Keep the mutation functions as no-ops for now (Step 2 will add real mutations)
-  const updateAction = (_id: string, _patch: Partial<ActionItem>) => {};
-  const updateEvidence = (_id: string, _patch: Partial<EvidenceItem>) => {};
-  const addIncident = (_incident: Incident) => {};
+  const queryClient = useQueryClient();
+
+  const updateAction = (id: string, patch: Partial<ActionItem>) => {
+    // Find the real UUID from the truncated id
+    const fullAction = actionsQuery.data?.actions.find((a) => a.id.startsWith(id));
+    if (!fullAction) return;
+    api.updateAction(fullAction.id, {
+      status: patch.status,
+      proof_description: patch.proof,
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['actions'] });
+    });
+  };
+
+  const updateEvidence = (id: string, patch: Partial<EvidenceItem>) => {
+    const fullEvidence = evidenceQuery.data?.evidence.find((e) => e.id.startsWith(id));
+    if (!fullEvidence) return;
+    api.updateEvidence(fullEvidence.id, {
+      status: patch.status,
+      detail: patch.detail,
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['evidence'] });
+    });
+  };
+
+  const addIncident = (incident: Incident) => {
+    api.createIncident('moonlight', {
+      title: incident.title,
+      incident_type: incident.type,
+      severity: incident.severity,
+      location: incident.location,
+      people: incident.people,
+      summary: incident.summary,
+    }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+    });
+  };
 
   return { venues, incidents, actions, evidence, scoreHistory, updateAction, updateEvidence, addIncident };
 }

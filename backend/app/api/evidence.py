@@ -1,4 +1,4 @@
-"""Evidence item endpoints — read-only."""
+"""Evidence item endpoints — read + write."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import EvidenceItem, Incident, Venue
-from app.schemas.evidence import EvidenceListResponse
+from app.schemas.evidence import EvidenceItemResponse, EvidenceListResponse, UpdateEvidenceRequest
 
 router = APIRouter(tags=["evidence"])
 
@@ -32,3 +32,28 @@ async def list_venue_evidence(venue_id: str, db: AsyncSession = Depends(get_db))
     evidence = result.scalars().all()
 
     return EvidenceListResponse(evidence=evidence)
+
+
+@router.patch("/evidence/{evidence_id}", response_model=EvidenceItemResponse)
+async def update_evidence(
+    evidence_id: str,
+    body: UpdateEvidenceRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an evidence item's status or detail."""
+    result = await db.execute(
+        select(EvidenceItem).where(EvidenceItem.id == evidence_id)
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Evidence item not found")
+
+    if body.status is not None:
+        item.status = body.status
+    if body.detail is not None:
+        item.detail = body.detail
+
+    await db.commit()
+    await db.refresh(item)
+
+    return EvidenceItemResponse.model_validate(item)
