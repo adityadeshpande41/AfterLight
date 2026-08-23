@@ -53,6 +53,61 @@ export interface UploadURLResponse {
   expires_in: number;
 }
 
+export interface WorkflowToolCall {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  result_summary: string;
+  duration_ms: number;
+}
+
+export interface WorkflowStep {
+  agent_name: string;
+  duration_ms: number;
+  tool_calls: WorkflowToolCall[];
+  output_summary: string;
+  error: string | null;
+}
+
+export interface WorkflowTrace {
+  workflow_id: string;
+  incident_id: string;
+  total_duration_ms: number;
+  total_tool_calls: number;
+  total_llm_calls: number;
+  steps: WorkflowStep[];
+}
+
+export interface WorkflowFinding {
+  status: string;
+  title: string;
+  cite: string;
+  urgency: string | null;
+}
+
+export interface WorkflowAction {
+  title: string;
+  owner: string;
+  priority: string;
+  due_description: string;
+  required_proof: string;
+  citation: string;
+}
+
+export interface WorkflowResult {
+  status: string;
+  incident_id: string;
+  findings: WorkflowFinding[];
+  action_plan_draft: WorkflowAction[];
+  evidence_assessment: Record<string, unknown> | null;
+  pattern_analysis: Record<string, unknown> | null;
+  playbook_citations: Record<string, unknown>[];
+  validation_result: Record<string, unknown> | null;
+  is_valid: boolean;
+  needs_human_review: boolean;
+  errors: string[];
+  trace: WorkflowTrace | null;
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -154,4 +209,12 @@ export const api = {
       object_key: objectKey,
       file_hash: fileHash,
     }),
+
+  // Workflow
+  analyzeIncident: (incidentId: string) =>
+    mutateJSON<WorkflowResult>(`/workflows/incidents/${incidentId}/analyze`, 'POST', {}),
+
+  // Decisions (human-in-the-loop)
+  createDecision: (body: { incident_id: string; decision: string; reviewer: string; note?: string; action_plan?: WorkflowAction[] }) =>
+    mutateJSON<{ id: string; decision: string }>('/decisions', 'POST', body),
 };
