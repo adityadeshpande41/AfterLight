@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Postgres
-    database_url: str = "postgresql+asyncpg://afterlight:afterlight@localhost:5432/afterlight"
+    database_url: str = "postgresql+asyncpg://afterlight:afterlight@localhost:5433/afterlight"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
