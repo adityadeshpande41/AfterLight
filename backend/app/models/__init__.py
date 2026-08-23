@@ -5,6 +5,7 @@ from app.models.evidence import EvidenceItem
 from app.models.action import ActionItem
 from app.models.score import ScoreSnapshot
 from app.models.audit import AuditEvent
+from app.models.playbook import PlaybookChunk
 
 __all__ = [
     "Base",
@@ -14,4 +15,5 @@ __all__ = [
     "ActionItem",
     "ScoreSnapshot",
     "AuditEvent",
+    "PlaybookChunk",
 ]

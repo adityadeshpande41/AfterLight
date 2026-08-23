@@ -1,13 +1,40 @@
 """
-LangGraph Incident Case Supervisor.
+LangGraph Incident Case Supervisor — Real Multi-Agent Architecture.
 
-A typed state graph that coordinates specialized agents:
-1. Evidence Agent — checks evidence completeness
-2. Pattern Agent — SQL analytics on incident history
-3. Mitigation Agent — drafts action plan using LLM
-4. Validator — deterministic schema/citation validation
-
-The supervisor routes through agents sequentially, not as a free-form swarm.
+Graph structure:
+                    ┌─────────────────┐
+                    │   load_data     │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+    ┌─────────▼─────────┐       ┌──────────▼──────────┐
+    │  evidence_agent   │       │   pattern_agent     │
+    └─────────┬─────────┘       └──────────┬──────────┘
+              │                             │
+              └──────────────┬──────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ playbook_agent  │  (RAG over pgvector)
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │mitigation_agent │  (LLM — structured output)
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │    validator    │  (deterministic)
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+               ┌───│  route_decision │───┐
+               │   └──────────────────┘   │
+               │                          │
+        valid / retry_exhausted      needs_retry
+               │                          │
+               ▼                          ▼
+             END                  mitigation_agent
+                                  (with feedback)
 """
 
 from typing import TypedDict
@@ -17,6 +44,7 @@ from langgraph.graph import END, StateGraph
 from app.workflows.agents.evidence_agent import evidence_agent
 from app.workflows.agents.mitigation_agent import mitigation_agent
 from app.workflows.agents.pattern_agent import pattern_agent
+from app.workflows.agents.playbook_agent import playbook_agent
 from app.workflows.agents.validator import validator_agent
 
 
@@ -24,22 +52,27 @@ class IncidentCaseState(TypedDict):
     """Shared state flowing through the workflow."""
 
     incident_id: str
-    # Populated by data loader
+    # Data layer
     incident: dict | None
     evidence_items: list[dict]
     venue: dict | None
-    # Populated by Evidence Agent
+    # Evidence Agent output
     evidence_assessment: dict | None
     findings: list[dict]
-    # Populated by Pattern Agent
+    # Pattern Agent output
     pattern_analysis: dict | None
-    # Populated by Mitigation Agent
+    # Playbook Agent output (RAG)
+    playbook_citations: list[dict]
+    # Mitigation Agent output (LLM)
     action_plan_draft: list[dict]
-    # Populated by Validator
+    # Validator output
     validation_result: dict | None
     is_valid: bool
     needs_human_review: bool
-    # Audit
+    # Retry tracking
+    retry_count: int
+    validation_feedback: str | None
+    # Errors
     errors: list[str]
 
 
@@ -55,7 +88,6 @@ async def load_incident_data(state: IncidentCaseState) -> IncidentCaseState:
     async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with async_session() as session:
-        # Load incident
         result = await session.execute(
             select(Incident).where(Incident.id == state["incident_id"])
         )
@@ -63,13 +95,11 @@ async def load_incident_data(state: IncidentCaseState) -> IncidentCaseState:
         if not incident:
             return {**state, "errors": ["Incident not found"]}
 
-        # Load evidence
         ev_result = await session.execute(
             select(EvidenceItem).where(EvidenceItem.incident_id == incident.id)
         )
         evidence_items = ev_result.scalars().all()
 
-        # Load venue
         venue_result = await session.execute(
             select(Venue).where(Venue.id == incident.venue_id)
         )
@@ -111,35 +141,94 @@ async def load_incident_data(state: IncidentCaseState) -> IncidentCaseState:
     }
 
 
-def should_continue(state: IncidentCaseState) -> str:
-    """Route based on validation result."""
+async def parallel_analysis(state: IncidentCaseState) -> IncidentCaseState:
+    """
+    Run Evidence Agent and Pattern Agent in parallel.
+    Both are independent — neither depends on the other's output.
+    """
+    import asyncio
+
+    # Run both agents concurrently
+    evidence_task = asyncio.create_task(evidence_agent(state))
+    pattern_task = asyncio.create_task(pattern_agent(state))
+
+    evidence_result, pattern_result = await asyncio.gather(evidence_task, pattern_task)
+
+    # Merge results
+    return {
+        **state,
+        "evidence_assessment": evidence_result.get("evidence_assessment"),
+        "findings": evidence_result.get("findings", []),
+        "pattern_analysis": pattern_result.get("pattern_analysis"),
+    }
+
+
+def route_after_validation(state: IncidentCaseState) -> str:
+    """
+    Conditional routing after validation:
+    - If valid → END
+    - If invalid and retry_count < 1 → retry mitigation with feedback
+    - If invalid and retry exhausted → END (human review)
+    """
     if state.get("errors"):
         return "end"
     if state.get("is_valid"):
         return "end"
-    if state.get("needs_human_review"):
-        return "end"
+    if state.get("retry_count", 0) < 1:
+        return "retry_mitigation"
+    # Retry exhausted — route to human review
     return "end"
+
+
+async def prepare_retry(state: IncidentCaseState) -> IncidentCaseState:
+    """Prepare validation feedback for the Mitigation Agent retry."""
+    validation_result = state.get("validation_result", {})
+    errors = validation_result.get("errors", [])
+
+    feedback = (
+        f"Your previous action plan had validation errors. "
+        f"Fix these issues: {'; '.join(errors)}. "
+        f"Ensure every action has: title, owner (a role), priority (Urgent/Important/Routine), "
+        f"due_description, required_proof, and a citation from the findings."
+    )
+
+    return {
+        **state,
+        "retry_count": state.get("retry_count", 0) + 1,
+        "validation_feedback": feedback,
+        "action_plan_draft": [],  # Clear for retry
+    }
 
 
 def build_incident_case_graph() -> StateGraph:
     """Construct the LangGraph state graph for incident case processing."""
     graph = StateGraph(IncidentCaseState)
 
-    # Add nodes
+    # Nodes
     graph.add_node("load_data", load_incident_data)
-    graph.add_node("evidence_agent", evidence_agent)
-    graph.add_node("pattern_agent", pattern_agent)
+    graph.add_node("parallel_analysis", parallel_analysis)
+    graph.add_node("playbook_agent", playbook_agent)
     graph.add_node("mitigation_agent", mitigation_agent)
     graph.add_node("validator", validator_agent)
+    graph.add_node("prepare_retry", prepare_retry)
 
-    # Define edges — sequential pipeline
+    # Edges — the flow
     graph.set_entry_point("load_data")
-    graph.add_edge("load_data", "evidence_agent")
-    graph.add_edge("evidence_agent", "pattern_agent")
-    graph.add_edge("pattern_agent", "mitigation_agent")
+    graph.add_edge("load_data", "parallel_analysis")
+    graph.add_edge("parallel_analysis", "playbook_agent")
+    graph.add_edge("playbook_agent", "mitigation_agent")
     graph.add_edge("mitigation_agent", "validator")
-    graph.add_edge("validator", END)
+
+    # Conditional routing after validation
+    graph.add_conditional_edges(
+        "validator",
+        route_after_validation,
+        {
+            "end": END,
+            "retry_mitigation": "prepare_retry",
+        },
+    )
+    graph.add_edge("prepare_retry", "mitigation_agent")
 
     return graph
 
@@ -158,16 +247,19 @@ async def run_incident_case(incident_id: str) -> dict:
         "evidence_assessment": None,
         "findings": [],
         "pattern_analysis": None,
+        "playbook_citations": [],
         "action_plan_draft": [],
         "validation_result": None,
         "is_valid": False,
         "needs_human_review": False,
+        "retry_count": 0,
+        "validation_feedback": None,
         "errors": [],
     }
 
     result = await incident_case_graph.ainvoke(initial_state)
 
-    # Store results in database
+    # Persist results
     await _persist_workflow_results(result)
 
     return result
@@ -175,7 +267,7 @@ async def run_incident_case(incident_id: str) -> dict:
 
 async def _persist_workflow_results(state: IncidentCaseState):
     """Save workflow findings and audit trail to the database."""
-    from datetime import datetime, timezone
+    import uuid
 
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -195,12 +287,10 @@ async def _persist_workflow_results(state: IncidentCaseState):
             select(Incident).where(Incident.id == state["incident_id"])
         )
         incident = result.scalar_one_or_none()
-        if incident and state.get("is_valid"):
+        if incident:
             incident.status = "Ready for review"
 
         # Create audit event
-        import uuid
-
         audit = AuditEvent(
             id=uuid.uuid4(),
             venue_id=uuid.UUID(state["venue"]["id"]) if state.get("venue") else None,
@@ -211,8 +301,10 @@ async def _persist_workflow_results(state: IncidentCaseState):
             meta={
                 "findings_count": len(state.get("findings", [])),
                 "actions_proposed": len(state.get("action_plan_draft", [])),
+                "playbook_citations": len(state.get("playbook_citations", [])),
                 "is_valid": state.get("is_valid", False),
                 "needs_human_review": state.get("needs_human_review", False),
+                "retry_count": state.get("retry_count", 0),
                 "errors": state.get("errors", []),
             },
         )

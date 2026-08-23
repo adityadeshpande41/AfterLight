@@ -24,6 +24,7 @@ class WorkflowRunResponse(BaseModel):
     action_plan_draft: list[dict]
     evidence_assessment: dict | None
     pattern_analysis: dict | None
+    playbook_citations: list[dict]
     validation_result: dict | None
     is_valid: bool
     needs_human_review: bool
@@ -64,6 +65,7 @@ async def trigger_incident_workflow(
         action_plan_draft=workflow_result.get("action_plan_draft", []),
         evidence_assessment=workflow_result.get("evidence_assessment"),
         pattern_analysis=workflow_result.get("pattern_analysis"),
+        playbook_citations=workflow_result.get("playbook_citations", []),
         validation_result=workflow_result.get("validation_result"),
         is_valid=workflow_result.get("is_valid", False),
         needs_human_review=workflow_result.get("needs_human_review", True),

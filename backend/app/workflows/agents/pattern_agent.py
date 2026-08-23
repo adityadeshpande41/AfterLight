@@ -1,24 +1,54 @@
 """
-Pattern Agent — SQL analytics on incident history.
+Pattern Agent — ReAct-style agent with SQL tools.
 
-Primarily deterministic. Detects frequency, severity, recurring patterns.
+This agent DECIDES what queries to run based on the incident context.
+It uses OpenAI function calling to invoke SQL tools, observes results,
+and synthesizes a pattern analysis.
 """
 
-from datetime import datetime, timezone
+import json
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from openai import OpenAI
 
 from app.config import settings
-from app.models import Incident
+from app.workflows.tools.sql_tools import SQL_TOOL_FUNCTIONS, SQL_TOOLS
+
+SYSTEM_PROMPT = """You are the Pattern Agent for Afterlight, a risk-intelligence platform for nightlife venues.
+
+Your job: Analyze incident patterns for a venue by querying the database. You have SQL tools available.
+
+Strategy:
+1. First, query all recent incidents for the venue to understand frequency.
+2. If the current incident has a specific location, query incidents at that location to check for repeats.
+3. Check time-of-day patterns — nightlife incidents often cluster between 11 PM and 3 AM.
+4. Check action completion stats to understand if the venue closes out corrective actions.
+
+After gathering data, synthesize your findings into a structured pattern analysis.
+
+Output your final analysis as a JSON object:
+{
+    "pattern_detected": true/false,
+    "incidents_30d": number,
+    "incidents_60d": number,
+    "total_incidents": number,
+    "trend": "increasing" | "stable" | "decreasing",
+    "top_location": "location name or null",
+    "location_repeat_count": number,
+    "night_cluster_count": number,
+    "has_high_severity_recent": true/false,
+    "supporting_incident_ids": ["INC-XXXX", ...],
+    "summary": "human-readable pattern summary"
+}"""
+
+
+MAX_TOOL_CALLS = 6  # Safety limit
 
 
 async def pattern_agent(state: dict) -> dict:
     """
-    Analyze incident patterns for the venue.
+    ReAct-style pattern analysis using OpenAI function calling + SQL tools.
 
-    Outputs:
-    - pattern_analysis: frequency, severity, recurring type/location/time patterns
+    The agent decides what to query, observes results, and reasons about patterns.
     """
     incident = state.get("incident")
     venue = state.get("venue")
@@ -26,102 +56,96 @@ async def pattern_agent(state: dict) -> dict:
     if not incident or not venue:
         return {**state, "pattern_analysis": None}
 
-    engine = create_async_engine(settings.database_url)
-    async_session = async_sessionmaker(engine, expire_on_commit=False)
+    client = OpenAI(api_key=settings.openai_api_key)
 
-    async with async_session() as session:
-        # Get all incidents for this venue in the last 90 days
-        result = await session.execute(
-            select(Incident)
-            .where(Incident.venue_id == venue["id"])
-            .order_by(Incident.occurred_at.desc())
+    # Initial message with context
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"""Analyze patterns for this incident:
+
+Venue: {venue['name']} (ID: {venue['id']}, capacity: {venue['capacity']})
+Incident: {incident['ref_code']} - {incident['title']}
+Type: {incident['type']}, Severity: {incident['severity']}
+Location: {incident['location']}
+Time: {incident['occurred_at']}
+
+Use your tools to query the database and build a pattern analysis.
+When you have enough information, provide your final JSON analysis (no tool call)."""},
+    ]
+
+    tool_calls_made = 0
+
+    # ReAct loop: let the agent call tools until it provides a final answer
+    while tool_calls_made < MAX_TOOL_CALLS:
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            messages=messages,
+            tools=SQL_TOOLS,
+            tool_choice="auto",
+            temperature=0.1,
         )
-        all_incidents = result.scalars().all()
 
-    await engine.dispose()
+        message = response.choices[0].message
 
-    # Analyze patterns
-    now = datetime.now(timezone.utc)
-    incidents_60d = [
-        i for i in all_incidents
-        if (now - i.occurred_at).days <= 60
-    ]
-    incidents_30d = [
-        i for i in all_incidents
-        if (now - i.occurred_at).days <= 30
-    ]
+        # If no tool calls, the agent is providing its final answer
+        if not message.tool_calls:
+            messages.append({"role": "assistant", "content": message.content})
+            break
 
-    # Location clustering
-    location_counts: dict[str, int] = {}
-    for i in all_incidents:
-        loc = i.location.split("·")[0].strip().lower()
-        location_counts[loc] = location_counts.get(loc, 0) + 1
+        # Process tool calls
+        messages.append(message)  # Add assistant message with tool_calls
 
-    top_location = max(location_counts, key=location_counts.get) if location_counts else None
-    location_repeat = location_counts.get(top_location, 0) >= 2 if top_location else False
+        for tool_call in message.tool_calls:
+            function_name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
 
-    # Time-of-day clustering
-    night_incidents = [
-        i for i in incidents_60d
-        if i.occurred_at.hour >= 23 or i.occurred_at.hour <= 3
-    ]
+            # Execute the tool
+            if function_name in SQL_TOOL_FUNCTIONS:
+                try:
+                    tool_result = SQL_TOOL_FUNCTIONS[function_name](**arguments)
+                    result_str = json.dumps(tool_result, default=str)
+                except Exception as e:
+                    result_str = json.dumps({"error": str(e)})
+            else:
+                result_str = json.dumps({"error": f"Unknown tool: {function_name}"})
 
-    # Severity trend
-    severities_recent = [i.severity for i in incidents_30d]
-    has_high_recent = "High" in severities_recent
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result_str,
+            })
+            tool_calls_made += 1
 
-    # Determine if pattern detected
-    pattern_detected = (
-        len(incidents_60d) >= 3
-        or (location_repeat and len(incidents_60d) >= 2)
-        or (len(night_incidents) >= 2)
-    )
+    # Parse the final response
+    final_content = messages[-1].get("content", "") if isinstance(messages[-1], dict) else message.content
 
-    # Trend direction
-    if len(incidents_30d) > len(incidents_60d) - len(incidents_30d):
-        trend = "increasing"
-    elif len(incidents_30d) == 0 and len(incidents_60d) > 0:
-        trend = "decreasing"
-    else:
-        trend = "stable"
+    try:
+        # Extract JSON from the response
+        if "```json" in final_content:
+            json_str = final_content.split("```json")[1].split("```")[0]
+        elif "{" in final_content:
+            # Find the JSON object
+            start = final_content.index("{")
+            end = final_content.rindex("}") + 1
+            json_str = final_content[start:end]
+        else:
+            json_str = final_content
 
-    pattern_analysis = {
-        "pattern_detected": pattern_detected,
-        "incidents_30d": len(incidents_30d),
-        "incidents_60d": len(incidents_60d),
-        "total_incidents": len(all_incidents),
-        "trend": trend,
-        "top_location": top_location,
-        "location_repeat_count": location_counts.get(top_location, 0) if top_location else 0,
-        "night_cluster_count": len(night_incidents),
-        "has_high_severity_recent": has_high_recent,
-        "supporting_incident_ids": [i.ref_code for i in incidents_60d[:5]],
-        "summary": _build_summary(incidents_60d, top_location, night_incidents, trend),
-    }
+        pattern_analysis = json.loads(json_str)
+    except (json.JSONDecodeError, ValueError):
+        # Fallback: return what we have
+        pattern_analysis = {
+            "pattern_detected": False,
+            "incidents_30d": 0,
+            "incidents_60d": 0,
+            "total_incidents": 0,
+            "trend": "unknown",
+            "top_location": None,
+            "location_repeat_count": 0,
+            "night_cluster_count": 0,
+            "has_high_severity_recent": False,
+            "supporting_incident_ids": [],
+            "summary": f"Agent analysis: {final_content[:200]}",
+        }
 
     return {**state, "pattern_analysis": pattern_analysis}
-
-
-def _build_summary(
-    incidents_60d: list,
-    top_location: str | None,
-    night_incidents: list,
-    trend: str,
-) -> str:
-    """Build a human-readable pattern summary."""
-    parts = []
-
-    if len(incidents_60d) >= 3:
-        parts.append(f"{len(incidents_60d)} incidents in the last 60 days")
-
-    if top_location and len([i for i in incidents_60d if top_location in i.location.lower()]) >= 2:
-        count = len([i for i in incidents_60d if top_location in i.location.lower()])
-        parts.append(f"{count} incidents at the {top_location}")
-
-    if len(night_incidents) >= 2:
-        parts.append(f"{len(night_incidents)} incidents between midnight and 2 AM")
-
-    if trend == "increasing":
-        parts.append("frequency is increasing")
-
-    return ". ".join(parts) + "." if parts else "No significant pattern detected."
