@@ -45,14 +45,17 @@ class ChatResponse(BaseModel):
 async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     """
     Send a message to the Risk Copilot.
-
-    The agent will:
-    1. Check guardrails (off-topic, unsafe, out-of-scope)
-    2. Check semantic cache
-    3. Use tools (SQL + RAG) to gather relevant data
-    4. Compose a grounded answer with citations
-    5. Cache the response if eligible
     """
-    agent = CopilotAgent(venue_id=body.venue_id)
-    result = await agent.answer(body.message)
-    return ChatResponse(**result)
+    try:
+        agent = CopilotAgent(venue_id=body.venue_id)
+        result = await agent.answer(body.message)
+        return ChatResponse(**result)
+    except Exception as e:
+        return ChatResponse(
+            answer=f"I'm having trouble connecting right now. Error: {str(e)[:200]}",
+            citations=[],
+            suggested_actions=[],
+            is_cached=False,
+            guardrail_triggered=False,
+            guardrail_reason=None,
+        )
