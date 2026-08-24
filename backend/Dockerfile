@@ -2,15 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (needed for psycopg2)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy dependency file first for caching
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+
+# Install Python dependencies including psycopg2-binary
+RUN pip install --no-cache-dir . && pip install --no-cache-dir psycopg2-binary
 
 # Copy application code
 COPY . .
