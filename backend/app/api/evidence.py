@@ -56,4 +56,13 @@ async def update_evidence(
     await db.commit()
     await db.refresh(item)
 
+    # Recalculate score after evidence change
+    from app.services.score_recalculator import recalculate_venue_score
+    incident = (await db.execute(
+        select(Incident).where(Incident.id == item.incident_id)
+    )).scalar_one_or_none()
+    if incident:
+        await recalculate_venue_score(str(incident.venue_id), db)
+        await db.commit()
+
     return EvidenceItemResponse.model_validate(item)

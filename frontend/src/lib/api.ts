@@ -151,6 +151,32 @@ export interface AgentRunDTO {
   created_at: string;
 }
 
+export interface PlaybookChunkDTO {
+  id: string;
+  document_title: string;
+  section_title: string;
+  content: string;
+  chunk_index: number;
+}
+
+export interface ExtractedIncidentDTO {
+  title: string | null;
+  incident_type: string | null;
+  severity: string | null;
+  location: string | null;
+  time_description: string | null;
+  people: string[];
+  summary: string | null;
+  evidence_leads: string[];
+}
+
+export interface ExtractionResponseDTO {
+  extracted: ExtractedIncidentDTO;
+  confidence: number;
+  follow_up_questions: string[];
+  ready_to_confirm: boolean;
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -273,4 +299,13 @@ export const api = {
 
   // Agent runs
   getAgentRuns: () => fetchJSON<{ runs: AgentRunDTO[] }>('/agent-runs'),
+
+  // Playbooks
+  getPlaybooks: () => fetchJSON<{ chunks: PlaybookChunkDTO[] }>('/playbooks'),
+  getPlaybookChunk: (id: string) => fetchJSON<PlaybookChunkDTO>(`/playbooks/${id}`),
+  searchPlaybooks: (query: string) => fetchJSON<{ chunks: PlaybookChunkDTO[] }>(`/playbooks/search/${encodeURIComponent(query)}`),
+
+  // AI Extraction
+  extractIncident: (text: string, followUpAnswers?: Record<string, string>) =>
+    mutateJSON<ExtractionResponseDTO>('/extract', 'POST', { text, follow_up_answers: followUpAnswers }),
 };

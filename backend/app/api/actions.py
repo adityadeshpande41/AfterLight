@@ -101,4 +101,13 @@ async def update_action(
     await db.commit()
     await db.refresh(action)
 
+    # Recalculate score after action change
+    from app.services.score_recalculator import recalculate_venue_score
+    incident = (await db.execute(
+        select(Incident).where(Incident.id == action.incident_id)
+    )).scalar_one_or_none()
+    if incident:
+        await recalculate_venue_score(str(incident.venue_id), db)
+        await db.commit()
+
     return ActionItemResponse.model_validate(action)

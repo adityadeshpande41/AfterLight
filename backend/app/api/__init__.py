@@ -6,8 +6,10 @@ from app.api.chat import router as chat_router
 from app.api.decisions import router as decisions_router
 from app.api.evidence import router as evidence_router
 from app.api.exports import router as exports_router
+from app.api.extract import router as extract_router
 from app.api.health import router as health_router
 from app.api.incidents import router as incidents_router
+from app.api.playbooks import router as playbooks_router
 from app.api.scores import router as scores_router
 from app.api.underwriting import router as underwriting_router
 from app.api.uploads import router as uploads_router
@@ -28,3 +30,5 @@ router.include_router(chat_router)
 router.include_router(underwriting_router)
 router.include_router(agent_runs_router)
 router.include_router(exports_router)
+router.include_router(playbooks_router)
+router.include_router(extract_router)

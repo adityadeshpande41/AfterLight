@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Architecture, Auth, Landing } from '@/pages/Public';
-import { ActionBoard, Copilot, EvidenceRoom, IncidentDetail, IncidentList, ReportWizard, ScorePage, VenueDashboard, VenueGuard } from '@/pages/Venue';
+import { ActionBoard, Copilot, EvidenceRoom, IncidentDetail, IncidentList, PlaybookViewer, ReportWizard, ScorePage, VenueDashboard, VenueGuard } from '@/pages/Venue';
 import { AgentRuns, CaseReview, Cases, ConsoleDashboard, InternalGuard, Playbooks, Portfolio, Underwriting, UnderwritingDetail, VenueProfile } from '@/pages/Console';
 import { Route, Switch, useLocation } from 'wouter';
 
@@ -38,6 +38,7 @@ function AppRouter() {
         <Route path="/venue/evidence"><Guard persona="venue"><EvidenceRoom /></Guard></Route>
         <Route path="/venue/score"><Guard persona="venue"><ScorePage /></Guard></Route>
         <Route path="/venue/copilot"><Guard persona="venue"><Copilot /></Guard></Route>
+        <Route path="/venue/playbook"><Guard persona="venue"><PlaybookViewer /></Guard></Route>
         <Route path="/console/dashboard"><Guard persona="internal"><ConsoleDashboard /></Guard></Route>
         <Route path="/console/portfolio"><Guard persona="internal"><Portfolio /></Guard></Route>
         <Route path="/console/cases"><Guard persona="internal"><Cases /></Guard></Route>

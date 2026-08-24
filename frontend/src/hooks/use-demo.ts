@@ -43,11 +43,17 @@ function mapIncidents(data: Awaited<ReturnType<typeof api.getVenueIncidents>>): 
   }));
 }
 
-function mapActions(data: Awaited<ReturnType<typeof api.getVenueActions>>): ActionItem[] {
+function mapActions(data: Awaited<ReturnType<typeof api.getVenueActions>>, incidentsData?: Awaited<ReturnType<typeof api.getVenueIncidents>>): ActionItem[] {
+  const incidentMap = new Map<string, string>();
+  if (incidentsData) {
+    for (const i of incidentsData.incidents) {
+      incidentMap.set(i.id, i.ref_code);
+    }
+  }
   return data.actions.map((a) => ({
     id: a.id.slice(0, 8),
     title: a.title,
-    incident: 'INC-1042', // simplified for now
+    incident: incidentMap.get(a.incident_id) || a.incident_id.slice(0, 8),
     owner: a.owner,
     due: a.due,
     priority: a.priority as ActionItem['priority'],
@@ -80,41 +86,41 @@ export function useDemoData() {
     queryKey: ['venues'],
     queryFn: () => api.getVenues(),
     retry: 1,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 
   const incidentsQuery = useQuery({
     queryKey: ['incidents', 'moonlight'],
     queryFn: () => api.getVenueIncidents('moonlight'),
     retry: 1,
-    staleTime: 30_000,
+    staleTime: 0,  // Always refetch when component mounts
   });
 
   const actionsQuery = useQuery({
     queryKey: ['actions', 'moonlight'],
     queryFn: () => api.getVenueActions('moonlight'),
     retry: 1,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 
   const evidenceQuery = useQuery({
     queryKey: ['evidence', 'moonlight'],
     queryFn: () => api.getVenueEvidence('moonlight'),
     retry: 1,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 
   const scoreQuery = useQuery({
     queryKey: ['scoreHistory', 'moonlight'],
     queryFn: () => api.getVenueScoreHistory('moonlight'),
     retry: 1,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 
   // Use API data if available, fall back to local fixtures
   const venues = venuesQuery.data ? mapVenues(venuesQuery.data) : seedVenues;
   const incidents = incidentsQuery.data ? mapIncidents(incidentsQuery.data) : seedIncidents;
-  const actions = actionsQuery.data ? mapActions(actionsQuery.data) : seedActions;
+  const actions = actionsQuery.data ? mapActions(actionsQuery.data, incidentsQuery.data || undefined) : seedActions;
   const evidence = evidenceQuery.data ? mapEvidence(evidenceQuery.data) : seedEvidence;
   const scoreHistory = scoreQuery.data ? mapScoreHistory(scoreQuery.data) : seedScoreHistory;
 
@@ -129,6 +135,9 @@ export function useDemoData() {
       proof_description: patch.proof,
     }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['actions'] });
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+      queryClient.invalidateQueries({ queryKey: ['score'] });
+      queryClient.invalidateQueries({ queryKey: ['scoreHistory'] });
     });
   };
 
@@ -140,6 +149,9 @@ export function useDemoData() {
       detail: patch.detail,
     }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['evidence'] });
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+      queryClient.invalidateQueries({ queryKey: ['score'] });
+      queryClient.invalidateQueries({ queryKey: ['scoreHistory'] });
     });
   };
 
