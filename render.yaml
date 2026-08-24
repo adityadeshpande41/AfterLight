@@ -1,0 +1,48 @@
+services:
+  # Backend API
+  - type: web
+    name: afterlight-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: afterlight-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: S3_ENDPOINT
+        value: https://s3.us-east-1.amazonaws.com
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_BUCKET
+        value: afterlight-evidence
+      - key: S3_REGION
+        value: us-east-1
+      - key: DEBUG
+        value: "false"
+    healthCheckPath: /api/health
+
+  # Frontend static site
+  - type: web
+    name: afterlight-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install -g pnpm && pnpm install && pnpm build
+    staticPublishPath: ./frontend/dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://afterlight-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  - name: afterlight-db
+    plan: free
+    postgresMajorVersion: "16"
