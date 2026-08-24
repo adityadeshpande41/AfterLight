@@ -7,6 +7,7 @@ from app.api.evidence import router as evidence_router
 from app.api.health import router as health_router
 from app.api.incidents import router as incidents_router
 from app.api.scores import router as scores_router
+from app.api.underwriting import router as underwriting_router
 from app.api.uploads import router as uploads_router
 from app.api.venues import router as venues_router
 from app.api.workflows import router as workflows_router
@@ -22,3 +23,4 @@ router.include_router(uploads_router)
 router.include_router(workflows_router)
 router.include_router(decisions_router)
 router.include_router(chat_router)
+router.include_router(underwriting_router)

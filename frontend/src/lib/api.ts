@@ -128,6 +128,18 @@ export interface ChatResponseDTO {
   guardrail_reason: string | null;
 }
 
+export interface UnderwritingResult {
+  venue: Record<string, unknown> | null;
+  historical_risk: Record<string, unknown> | null;
+  control_status: Record<string, unknown> | null;
+  guidelines: Record<string, unknown>[];
+  draft: Record<string, unknown> | null;
+  posture: string | null;
+  forced_referral: boolean;
+  referral_reasons: string[];
+  errors: string[];
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -241,4 +253,8 @@ export const api = {
   // Chat (Risk Copilot)
   chat: (message: string, venueId: string = 'moonlight') =>
     mutateJSON<ChatResponseDTO>('/chat', 'POST', { message, venue_id: venueId }),
+
+  // Underwriting
+  generateUnderwriting: (venueId: string) =>
+    mutateJSON<UnderwritingResult>(`/underwriting/venues/${venueId}/generate`, 'POST', {}),
 };
