@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 from app.config import settings
 from app.services.embeddings import get_embedding
 
-SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql")
+SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
 
 
 def search_playbooks(query: str, top_k: int = 3) -> str:

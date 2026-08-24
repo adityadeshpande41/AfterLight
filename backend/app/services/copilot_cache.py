@@ -22,7 +22,7 @@ from sqlalchemy import create_engine, text
 from app.config import settings
 from app.services.embeddings import get_embedding
 
-SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql")
+SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
 
 # Similarity threshold — lower distance = more similar
 # 0.15 means the cached question must be very similar (cosine distance < 0.15)

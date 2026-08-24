@@ -35,7 +35,7 @@ from app.config import settings
 from app.services.embeddings import get_embedding
 from app.workflows.tools.rag_tools import RAG_TOOL_FUNCTIONS
 
-SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql")
+SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
 
 
 class UnderwritingState(TypedDict):

@@ -67,7 +67,7 @@ class CopilotAgent:
             return venue_id  # Already a UUID
         # Look up by slug
         from sqlalchemy import create_engine, text
-        SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql")
+        SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
         engine = create_engine(SYNC_URL)
         with engine.connect() as conn:
             result = conn.execute(
