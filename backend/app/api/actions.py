@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,15 @@ from app.models import ActionItem, Incident, Venue
 from app.schemas.actions import ActionItemResponse, ActionListResponse, UpdateActionRequest
 
 router = APIRouter(tags=["actions"])
+
+
+class CreateActionRequest(BaseModel):
+    incident_id: str  # ref_code like INC-1042 or UUID
+    title: str
+    owner: str
+    priority: str = "Important"
+    due: str = "TBD"
+    proof_description: str | None = None
 
 
 @router.get("/venues/{venue_id}/actions", response_model=ActionListResponse)
@@ -34,6 +44,37 @@ async def list_venue_actions(venue_id: str, db: AsyncSession = Depends(get_db)):
     actions = result.scalars().all()
 
     return ActionListResponse(actions=actions)
+
+
+@router.post("/actions", response_model=ActionItemResponse, status_code=201)
+async def create_action(
+    body: CreateActionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new corrective action for an incident."""
+    # Resolve incident
+    if body.incident_id.startswith("INC-"):
+        stmt = select(Incident).where(Incident.ref_code == body.incident_id)
+    else:
+        stmt = select(Incident).where(Incident.id == body.incident_id)
+    incident = (await db.execute(stmt)).scalar_one_or_none()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    action = ActionItem(
+        incident_id=incident.id,
+        title=body.title,
+        owner=body.owner,
+        priority=body.priority,
+        status="Open",
+        due=body.due,
+        proof_description=body.proof_description,
+    )
+    db.add(action)
+    await db.commit()
+    await db.refresh(action)
+
+    return ActionItemResponse.model_validate(action)
 
 
 @router.patch("/actions/{action_id}", response_model=ActionItemResponse)

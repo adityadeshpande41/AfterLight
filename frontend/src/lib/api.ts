@@ -236,6 +236,8 @@ export const api = {
     mutateJSON<IncidentDTO>(`/venues/${venueId}/incidents`, 'POST', body),
   updateAction: (actionId: string, body: UpdateActionBody) =>
     mutateJSON<ActionItemDTO>(`/actions/${actionId}`, 'PATCH', body),
+  createAction: (body: { incident_id: string; title: string; owner: string; priority?: string; due?: string; proof_description?: string }) =>
+    mutateJSON<ActionItemDTO>('/actions', 'POST', body),
   updateEvidence: (evidenceId: string, body: UpdateEvidenceBody) =>
     mutateJSON<EvidenceItemDTO>(`/evidence/${evidenceId}`, 'PATCH', body),
 
