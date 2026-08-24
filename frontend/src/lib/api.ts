@@ -140,6 +140,17 @@ export interface UnderwritingResult {
   errors: string[];
 }
 
+export interface AgentRunDTO {
+  id: string;
+  venue_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  actor: string;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
 // --- Types matching backend Pydantic schemas ---
 
 export interface VenueDTO {
@@ -257,4 +268,7 @@ export const api = {
   // Underwriting
   generateUnderwriting: (venueId: string) =>
     mutateJSON<UnderwritingResult>(`/underwriting/venues/${venueId}/generate`, 'POST', {}),
+
+  // Agent runs
+  getAgentRuns: () => fetchJSON<{ runs: AgentRunDTO[] }>('/agent-runs'),
 };
