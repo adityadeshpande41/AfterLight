@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://localhost:5173",
             "https://afterlight-frontend.onrender.com",
+            "https://afterlight-te7r.onrender.com",
             os.environ.get("FRONTEND_URL", ""),
         ],
         allow_credentials=True,
