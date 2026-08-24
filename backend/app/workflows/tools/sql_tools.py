@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, text
 from app.config import settings
 
 # Sync connection URL
-SYNC_URL = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+from app.sync_db import SYNC_URL
 
 
 def _sync_query(sql: str, params: dict = None) -> list[dict]:
